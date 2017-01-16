@@ -1,0 +1,68 @@
+---
+title: "Analysis of the First Dataset"
+author: "Jacqueline Liu"
+date: "January 15, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+library(ggplot2)
+library(TSA)
+```
+
+## Exploratory Data Analysis
+```{r eda}
+ts1 <- ts(read.csv("1DS.csv", header = FALSE), frequency = 52)
+t <- time(ts1)
+
+ggplot(data = data.frame(), aes(x = t, y = ts1)) + geom_point() +
+  xlab('Time') + ylab('Value') + ggtitle("Scatterplot of Original Data")
+```
+
+The time series looks a little heteroskedastic (range of almost 50 in the first period, under 40 for the last), so a log transformation should be applied. The data clearly has a seasonal trend, in addition to the overall trend.
+
+```{r log_transform}
+ts1.log = log(ts1)
+```
+
+## Cross-Validation
+To compare models, we'll use the mean squared error given through cross validation. This function takes in the ARMA and the SARMA order as a list (p, d, q), along with _k_, the number of periods to predict. Larger _k_ have the disadvantage of having less data with which to build the model.
+```{r cv}
+computeCVmse <- function(order.totry, seasorder.totry, k = 1){
+  MSE <- c()
+  train.dt <-ts1.log[1:(length(ts1.log) - 52 * k)]
+  test.dt <- ts1.log[(length(ts1.log) - 52 * k + 1):(length(ts1.log) - 52 * (k - 1))]
+  mod <- arima(train.dt, order = order.totry, seasonal = 
+                 list(order = seasorder.totry, period = 52))
+  fcast <- predict(mod, n.ahead = 52)
+  MSE <- mean((exp(fcast$pred) - exp(test.dt))^2)
+  return(MSE)
+}
+```
+
+
+## Nonparametric modeling
+
+The seasonality is likely 52, the number of weeks in a year, so the data should be differenced with that lag. 
+```{r differencing}
+ts1.diff <- diff(ts1.log, lag = 52)
+```
+
+```{r acf_comp}
+plot(acf(ts1, lag.max = 200), main = "Original ACF")
+plot(acf(ts1.diff, lag.max = 200), main = "ACF after log transformation and differencing")
+```
+
+
+To understand the nonseasonal process, we study the ACF and PACF
+```{r}
+plot(acf(ts1.diff), main = "ACF plot")
+plot(pacf(ts1.diff), main = "PACF plot")
+```
+
+They look like the result of a white noise process, which means the seasonal and linear trend were successfully removed. The ACF tails off while the PACF cuts off immediately, suggesting an AR(3) process. It could, however, also be a rough MA(3). Looking at the ACF over a greater number of lags, we see there is a peak after one period, but not after two or three. If significant, which it barely seems to be, there could be a multiplicative SAR(1) or SMA(1) term in the model. 
+
+
