@@ -10,9 +10,15 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE,
                       message = FALSE,
-                      warning = FALSE)
+                      warning = FALSE,
+                      fig.height = 3.5)
 library(ggplot2)
 library(TSA)
+library(xtable)
+library(RColorBrewer)
+
+options(digits = 2, xtable.comment = FALSE)
+theme_update(plot.title = element_text(hjust = 0.5))
 ```
 
 ## Exploratory Data Analysis
@@ -20,8 +26,8 @@ library(TSA)
 ts1 <- ts(read.csv("1DS.csv", header = FALSE), frequency = 52)
 t <- time(ts1)
 
-ggplot(data = data.frame(), aes(x = t, y = ts1)) + geom_point() +
-  xlab('Time') + ylab('Value') + ggtitle("Scatterplot of Original Data")
+ggplot(data = data.frame(), aes(x = t, y = ts1)) + geom_line() +
+  xlab('Time') + ylab('Value') + ggtitle("Lineplot of Original Data")
 ```
 
 The time series looks a little heteroskedastic (range of almost 50 in the first period, under 40 for the last), so a log transformation should be applied. The data clearly has a seasonal trend, in addition to the overall trend.
@@ -170,12 +176,38 @@ BIC.results <- sapply(models, function(x) {BIC(get(x))})
 CV.results <- sapply(lapply(models, function(x) {paste0(x, ".error")}), get)
 
 model.statistics <- data.frame(AIC = AIC.results, BIC = BIC.results, CVerror = CV.results)
-save(model.statistics, file = "model_statistics.Rdata")
+
+preds <- exp(predict(ma31.sma11, n.ahead = 52)$pred)
+other <- exp(predict(ma31.sar11, n.ahead = 52)$pred)
+more <- exp(predict(ar11.sar11, n.ahead = 52)$pred)
+
+save(model.statistics, preds, other, more, file = "model_data.Rdata")
 ```
 ```{r}
-load("model_statistics.Rdata")
+load("model_data.Rdata")
 ```
-Testing various combinations of AR(1) or MA(3) with SAR(1) or SMA(1) terms, along with a difference = 1 in the ARMA and the seasonal process, gave many different models. Comparing them with AIC, BIC, and CV-error statistics, the results are in Table 1:
+Testing various combinations of AR(1) or MA(3) with SAR(1) or SMA(1) terms, along with a difference = 1 in the ARMA and the seasonal process, gave many different models. Comparing them with AIC, BIC, and CV-error statistics, the results are in Table 1. It seems that for models with lower cross-validation errors (i.e. under 90), the `ma31.sma11`, a SARMA(0, 1, 3)x(0, 1, 1) model, has the best AIC, BIC, and CV score, making it the obvious choice for prediction purposes. Using it to predict the next 52 datapoints, the results have to be raised to the power of $e$ because of the earlier log transformation.
+
+```{r, results = "asis"}
+xtable(model.statistics, caption = "Model Diagnostics")
+```
+
+```{r, fig.cap = "The given data is in red, ma31sma11 predictions in orange, ma31.sar11 green, ar11.sar11 blue"}
+brewed.colors <- brewer.pal(4, "Spectral")
+plot.data <- data.frame(x = c(t, rep(seq(5.02, 6, length.out = 52), 3)), 
+                        y = c(ts1, preds, other, more))
+ggplot( ) + 
+  geom_line(data = plot.data[1:length(t), ], 
+            aes(x = x, y = y), col = brewed.colors[1]) + 
+  geom_line(data = plot.data[length(t):(length(t) + 52), ], 
+            aes(x = x, y = y), col = brewed.colors[2]) + 
+  geom_line(data = plot.data[(length(t) + 52):(length(t) + 2*52), ], 
+            aes(x = x, y = y), col = brewed.colors[3], alpha = 0.7) + 
+  geom_line(data = plot.data[(length(t) + 2*52):(length(t) + 3*52), ], 
+            aes(x = x, y = y), col = brewed.colors[4], alpha = 0.7) + 
+  xlab('Time') + ylab('Value') + ggtitle("Lineplot of Original Data and Predictions")
+
+```
 
 
 
